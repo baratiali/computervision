@@ -1,19 +1,40 @@
 import cv2
+import numpy as np
+import imutils as imu
 
-# Load the image
-image = cv2.imread('image.jpg', cv2.IMREAD_GRAYSCALE)
+cam = cv2.VideoCapture(0)
+template = cv2.imread("img/face.png")
+template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+_, template = cv2.threshold(template, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+(tH, tW) = template.shape[:2]
 
-# Apply Sobel operator
-sobel_x = cv2.Sobel(image, cv2.CV_64F, 1, 0, ksize=3)
-sobel_y = cv2.Sobel(image, cv2.CV_64F, 0, 1, ksize=3)
+while True:
+    _, frame = cam.read()
+    found = None
+    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-# Compute the magnitude of gradients
-gradient_mag = cv2.magnitude(sobel_x, sobel_y)
+    for scale in np.linspace(0.2, 1.0, 20)[::-1]:
+        resized = imu.resize(frame_gray, width=int(frame_gray.shape[1] * scale))
+        r = frame_gray.shape[1] / float(resized.shape[1])
+        if resized.shape[0] < tH or resized.shape[1] < tW:
+            break
 
-# Display the result
-cv2.imshow('Original Image', image)
-cv2.imshow('Sobel X', sobel_x)
-cv2.imshow('Sobel Y', sobel_y)
-cv2.imshow('Gradient Magnitude', gradient_mag)
-cv2.waitKey(0)
+        frame_thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+        result = cv2.matchTemplate(frame_thresh, template, cv2.TM_CCOEFF)
+        (_, maxVal, _, maxLoc) = cv2.minMaxLoc(result)
+        
+        if found is None or maxVal > found[0]:
+            found = (maxVal, maxLoc, r)
+
+    if found is not None:
+        (_, maxLoc, r) = found
+        (startX, startY) = (int(maxLoc[0] * r), int(maxLoc[1] * r))
+        (endX, endY) = (int((maxLoc[0] + tW) * r), int((maxLoc[1] + tH) * r))
+        cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 0, 255), 2)
+    
+    cv2.imshow("Face Detection", frame)
+    if cv2.waitKey(1) == 27:
+        break
+
+cam.release()
 cv2.destroyAllWindows()
