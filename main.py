@@ -1,40 +1,39 @@
-import cv2
 import numpy as np
-import imutils as imu
+import cv2
 
-cam = cv2.VideoCapture(0)
-template = cv2.imread("img/face.png")
-template = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
-_, template = cv2.threshold(template, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-(tH, tW) = template.shape[:2]
+font = cv2.FONT_HERSHEY_SIMPLEX
 
-while True:
-    _, frame = cam.read()
-    found = None
-    frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+image = cv2.imread("img/coins.jpg")
+blurred = cv2.GaussianBlur(image, (7, 7), 0)
+filtered = cv2.pyrMeanShiftFiltering(blurred, 20, 10)
+gray = cv2.cvtColor(filtered, cv2.COLOR_BGR2GRAY)
 
-    for scale in np.linspace(0.2, 1.0, 20)[::-1]:
-        resized = imu.resize(frame_gray, width=int(frame_gray.shape[1] * scale))
-        r = frame_gray.shape[1] / float(resized.shape[1])
-        if resized.shape[0] < tH or resized.shape[1] < tW:
-            break
+_, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
+thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, None, iterations=1)
 
-        frame_thresh = cv2.threshold(resized, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-        result = cv2.matchTemplate(frame_thresh, template, cv2.TM_CCOEFF)
-        (_, maxVal, _, maxLoc) = cv2.minMaxLoc(result)
-        
-        if found is None or maxVal > found[0]:
-            found = (maxVal, maxLoc, r)
+_, labels = cv2.connectedComponents(thresh, connectivity=8, ltype=cv2.CV_32S)
+mask = np.zeros(thresh.shape, np.uint8)
+center = []
 
-    if found is not None:
-        (_, maxLoc, r) = found
-        (startX, startY) = (int(maxLoc[0] * r), int(maxLoc[1] * r))
-        (endX, endY) = (int((maxLoc[0] + tW) * r), int((maxLoc[1] + tH) * r))
-        cv2.rectangle(frame, (startX, startY), (endX, endY), (0, 0, 255), 2)
-    
-    cv2.imshow("Face Detection", frame)
-    if cv2.waitKey(1) == 27:
-        break
+for label in np.unique(labels):
+    if label == 0:
+        continue
 
-cam.release()
+    labelMask = np.zeros(thresh.shape, dtype="uint8")
+    labelMask[labels == label] = 255
+    numPixels = cv2.countNonZero(labelMask)
+
+    if numPixels > 300:
+        M = cv2.moments(labelMask)
+        cX = int(M['m10'] / M['m00'])
+        cY = int(M['m01'] / M['m00'])
+        center.append((cX, cY))
+        mask = cv2.add(mask, labelMask)
+
+for i, center in enumerate(center):
+    cv2.circle(image, center, 30, (32, 100, 255), 2)
+    cv2.putText(image, str(i + 1), center, font, 1, (0, 0, 255), 3)
+
+cv2.imshow("Detecting Coins", image)
+cv2.waitKey(0)
 cv2.destroyAllWindows()
